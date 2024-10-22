@@ -1,93 +1,84 @@
-
-#include <stdlib.h>
+#include <fcntl.h>
 #include <unistd.h>
+#include <stdlib.h>
 #include <string.h>
-#include <ctype.h>
 #include <limits.h>
 #include <stdio.h>
-#define BUFFER_SIZE 1024
-
+#include <ctype.h>
 int is_number(const char *str) {
     if (str == NULL || *str == '\0') {
         return 0;
     }
-    
     if (*str == '-') {
         str++;
     }
-
     while (*str != '\0') {
-        if (!isdigit((unsigned char)*str)) {
+        if (!isdigit(*str)) {
             return 0;
         }
         str++;
     }
-    
     return 1;
 }
 
-
 int safe_divide(int a, int b, int *error) {
     if (b == 0) {
-        *error = 1;  
+        *error = 1;
         return 0;
     }
-    
-    if (a == INT_MIN && b == -1) {
-        *error = 2; 
-        return 0;
-    }
-    
-    int result = a / b;
-    
- 
-    if (a != 0 && result != 0 && (a ^ result) < 0 && (a ^ b) < 0) {
-        *error = 2; 
-        return 0;
-    }
-    
-    *error = 0; 
-    return result;
+
+    *error = 0;
+    return a / b;
 }
 
-int main() {
-    char buffer[BUFFER_SIZE];
-    char filename[BUFFER_SIZE];
+void write_to_stdout(const char *message) {
+    write(STDOUT_FILENO, message, strlen(message));
+}
 
-    if (fgets(filename, BUFFER_SIZE, stdin) == NULL) {
-        fprintf(stderr, "Ошибка при чтении имени файла\n");
+void write_to_file(int fd, const char *message) {
+    write(fd, message, strlen(message));
+}
+
+int main(int argc, char **argv) {
+    int end_program = 0;
+    if (argc != 2) {
+        write_to_stdout("Ошибка: не передано имя файла\n");
         exit(EXIT_FAILURE);
     }
-    filename[strcspn(filename, "\n")] = 0;
 
-    FILE *output_file = fopen(filename, "w");
-    if (output_file == NULL) {
-        perror("Не удалось открыть выходной файл");
+    char buffer[1024];
+    const char* filename = argv[1];
+    int output_fd = open(filename, O_WRONLY | O_CREAT | O_TRUNC, 0600);
+    if (output_fd == -1) {
+        write_to_stdout("Не удалось открыть выходной файл\n");
         exit(EXIT_FAILURE);
     }
-
-    char result_buffer[BUFFER_SIZE];
 
     while (1) {
-        ssize_t bytes_read = read(STDIN_FILENO, buffer, BUFFER_SIZE);
+        if(end_program){
+            break;
+        }
+        ssize_t bytes_read = read(STDIN_FILENO, buffer, sizeof(buffer) - 1);
         if (bytes_read <= 0) {
             break;
         }
 
         buffer[bytes_read] = '\0';
 
+        if (strcmp(buffer, "QUIT\n") == 0) {
+            break;
+        }
+
         char *token;
-        int numbers[BUFFER_SIZE];
+        int numbers[1024];
         int count = 0;
         int invalid_input = 0;
 
         token = strtok(buffer, " \n");
-        while (token != NULL && count < BUFFER_SIZE) {
+        while (token != NULL) {
             if (is_number(token)) {
                 long val = strtol(token, NULL, 10);
-                if (((val == LONG_MAX || val == LONG_MIN)) || 
-                   
-                    val > INT_MAX || val < INT_MIN) {
+                if (val > INT_MAX || val < INT_MIN) {
                     invalid_input = 1;
                     break;
                 }
@@ -100,51 +91,32 @@ int main() {
         }
 
         if (invalid_input) {
-            fprintf(output_file, "Ошибка: введено некорректное число\n");
-            fprintf(stdout, "Ошибка: введено некорректное число\n");
-            fflush(stdout);
-            fflush(output_file);
+            write_to_file(output_fd, "Ошибка: введено некорректное число\n");
             continue;
         }
 
         if (count < 2) {
-            fprintf(output_file, "Некорректный ввод: необходимо как минимум два числа\n");
-            fprintf(stdout, "Ошибка: необходимо как минимум два числа\n");
-            fflush(stdout);
-            fflush(output_file);
+            write_to_file(output_fd, "Ошибка: необходимо как минимум два числа\n");
             continue;
         }
 
         int result = numbers[0];
         int error = 0;
-
         for (int i = 1; i < count; i++) {
             result = safe_divide(result, numbers[i], &error);
-            if (error != 0) {
-                break;
+            if (error == 1) {
+                end_program = 1;
+                write_to_file(output_fd, "Ошибка: Обнаружено деление на ноль\n");
+                close(output_fd);
+                exit(EXIT_FAILURE);  // Завершаем дочерний процесс при делении на ноль
             }
         }
 
-        if (error == 1) {
-            fprintf(output_file, "Обнаружено деление на ноль\n");
-            fprintf(stdout, "EXIT\n");
-            fflush(stdout);
-            fflush(output_file);
-            break;
-        } else if (error == 2) {
-            fprintf(output_file, "Произошло переполнение при вычислении\n");
-            fprintf(stdout, "Ошибка: переполнение\n");
-            fflush(stdout);
-            fflush(output_file);
-            continue;
-        } else {
-            fprintf(output_file, "Результат: %d\n", result);
-            fprintf(stdout, "%d\n", result);
-            fflush(stdout);
-            fflush(output_file);
-        }
+        char result_buffer[50];
+        snprintf(result_buffer, sizeof(result_buffer), "Результат: %d\n", result);
+        write_to_file(output_fd, result_buffer);
     }
 
-    fclose(output_file);
+    close(output_fd);
     return 0;
 }
