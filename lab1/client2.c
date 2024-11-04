@@ -31,13 +31,8 @@ int safe_divide(int a, int b, int *error) {
     return a / b;
 }
 
-void write_message(const char *message) {
-    write(STDERR_FILENO, message, strlen(message));
-}
-
 int main(int argc, char **argv) {
     if (argc != 2) {
-        write_message("Ошибка: не передано имя файла\n");
         exit(EXIT_FAILURE);
     }
 
@@ -45,10 +40,9 @@ int main(int argc, char **argv) {
     const char *filename = argv[1];
     int output_fd = open(filename, O_WRONLY | O_CREAT | O_TRUNC, 0600);
     if (output_fd == -1) {
-        write_message("Не удалось открыть выходной файл\n");
         exit(EXIT_FAILURE);
     }
-
+    int flag = 0;
     while (1) {
         ssize_t bytes_read = read(STDIN_FILENO, buffer, sizeof(buffer) - 1);
         if (bytes_read <= 0) {
@@ -83,13 +77,11 @@ int main(int argc, char **argv) {
         }
 
         if (invalid_input) {
-            write_message("Ошибка: введено некорректное число\n");
             write(output_fd, "Ошибка: введено некорректное число\n", strlen("Ошибка: введено некорректное число\n"));
             continue;
         }
 
         if (count < 2) {
-            write_message("Ошибка: необходимо как минимум два числа\n");
             write(output_fd, "Ошибка: необходимо как минимум два числа\n", strlen("Ошибка: необходимо как минимум два числа\n"));
             continue;
         }
@@ -99,16 +91,18 @@ int main(int argc, char **argv) {
         for (int i = 1; i < count; i++) {
             result = safe_divide(result, numbers[i], &error);
             if (error == 1) {
-                write_message("EXIT\n");
                 write(output_fd, "Ошибка: Обнаружено деление на ноль\n", strlen("Ошибка: Обнаружено деление на ноль\n"));
+                flag = 1;
+                break;
                 close(output_fd);
-                exit(EXIT_FAILURE);
+                exit(EXIT_FAILURE); // Критическая ошибка
             }
         }
-
+        if(flag){
+            exit(EXIT_FAILURE);
+        }
         char result_buffer[50];
         snprintf(result_buffer, sizeof(result_buffer), "Результат: %d\n", result);
-        write_message("Нет ошибок....\n");
         write(output_fd, result_buffer, strlen(result_buffer));
     }
 

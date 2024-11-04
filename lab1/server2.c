@@ -3,17 +3,34 @@
 #include <sys/wait.h>
 #include <string.h>
 #include <fcntl.h>
+#include <signal.h>
+
+volatile sig_atomic_t child_finished = 0;
 
 void write_to_stdout(const char *message) {
     write(STDOUT_FILENO, message, strlen(message));
 }
 
+// Обработчик для SIGCHLD
+void handle_sigchld(int sig) {
+    (void)sig; // Чтобы избежать предупреждений о неиспользованной переменной
+    int status;
+    waitpid(-1, &status, WNOHANG);
+    child_finished = 1; // Устанавливаем флаг, чтобы завершить родителя
+}
+
 int main() {
     char filename[1024];
     int pipe_parent_to_child[2];
-    int pipe_child_to_parent[2];
     pid_t child_pid;
     char buffer[1024];
+
+    // Установка обработчика SIGCHLD
+    struct sigaction sa;
+    sa.sa_handler = handle_sigchld;
+    sigemptyset(&sa.sa_mask);
+    sa.sa_flags = SA_RESTART;
+    sigaction(SIGCHLD, &sa, NULL);
 
     write_to_stdout("Введите имя файла: ");
     ssize_t bytes_read = read(STDIN_FILENO, filename, sizeof(filename) - 1);
@@ -23,8 +40,8 @@ int main() {
     }
     filename[bytes_read - 1] = '\0';
 
-    if (pipe(pipe_parent_to_child) == -1 || pipe(pipe_child_to_parent) == -1) {
-        write_to_stdout("Ошибка: не удалось создать трубы\n");
+    if (pipe(pipe_parent_to_child) == -1) {
+        write_to_stdout("Ошибка: не удалось создать трубу\n");
         exit(EXIT_FAILURE);
     }
 
@@ -41,24 +58,19 @@ int main() {
         dup2(pipe_parent_to_child[0], STDIN_FILENO);
         close(pipe_parent_to_child[0]);
 
-        close(pipe_child_to_parent[0]);
-        dup2(pipe_child_to_parent[1], STDERR_FILENO);
-        close(pipe_child_to_parent[1]);
-
-        if (execl("./client", "client", filename, NULL) == -1) {
+        if (execl("./client2", "client2", filename, NULL) == -1) {
             write_to_stdout("Ошибка: не удалось запустить клиентскую программу\n");
             exit(EXIT_FAILURE);
         }
     } else {
         // Родительский процесс
         close(pipe_parent_to_child[0]);
-        close(pipe_child_to_parent[1]);
 
         write_to_stdout("Введите числа, разделенные пробелами (или 'q' для выхода):\n");
 
-        while (1) {
+        while (!child_finished) { // Завершаем, если флаг child_finished установлен
             bytes_read = read(STDIN_FILENO, buffer, sizeof(buffer) - 1);
-            if (bytes_read <= 0) {
+            if (bytes_read <= 0 || child_finished) {
                 break;
             }
             buffer[bytes_read] = '\0';
@@ -68,27 +80,12 @@ int main() {
                 break;
             }
 
-            // Отправляем данные клиенту
             write(pipe_parent_to_child[1], buffer, bytes_read);
-
-            // Читаем ответ от клиента
-            char response[1024];
-            ssize_t response_size = read(pipe_child_to_parent[0], response, sizeof(response) - 1);
-            if (response_size > 0) {
-                response[response_size] = '\0';
-                write_to_stdout(response);
-
-                // Проверяем на EXIT
-                if (strstr(response, "EXIT") != NULL) {
-                    break;
-                }
-            }
         }
 
         close(pipe_parent_to_child[1]);
-        close(pipe_child_to_parent[0]);
-        int status;
-        waitpid(child_pid, &status, 0);
     }
+
+    write_to_stdout("Завершение работы программы.\n");
     return 0;
 }
