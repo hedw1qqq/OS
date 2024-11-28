@@ -62,10 +62,6 @@ void parallel_bitonic_sort_main(int *arr, int size, int num_threads)
         return;
     }
 
-    if (num_threads > size / 2)
-    {
-        num_threads = size / 2;
-    }
 
     pthread_t threads[num_threads];
     thread_args targs[num_threads];
