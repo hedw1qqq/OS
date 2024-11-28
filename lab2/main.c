@@ -56,7 +56,7 @@ void *parallel_bitonic_sort(void *args)
 void parallel_bitonic_sort_main(int *arr, int size, int num_threads)
 {
 
-    if (num_threads <= 1 || size <= 1000)
+    if (num_threads <= 1)
     {
         bitonic_sort_recursive(arr, 0, size, 1);
         return;
@@ -109,7 +109,7 @@ void write_to_stderr(const char *message)
 int main()
 {   srand(time(NULL));
 
-    const int size = 256;
+    const int size = 1024;
     int arr[size];
     for (int i = 0; i < size;i++){
         arr[i] = rand() % 100;
@@ -121,7 +121,7 @@ int main()
         return 1;
 
     }
-    int num_threads = 2;
+    int num_threads = 16;
 
 
     write_to_stdout("Исходный массив: ");
