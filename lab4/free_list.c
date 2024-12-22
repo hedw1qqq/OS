@@ -53,7 +53,7 @@ struct Allocator
     Block *prev = NULL;
     size_t best_size = SIZE_MAX;
 
-    // Find best fitting block
+
     while (current)
     {
         if (current->is_free && current->size >= size)
